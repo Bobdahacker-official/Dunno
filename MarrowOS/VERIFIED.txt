@@ -27,3 +27,4 @@ Administration update:
 - Full iproute2, util-linux, procps and Debian bootstrap tools executed in the guest.
 - Final train -> model delivery -> automatic power-off pipeline completed.
 - Final filesystem integrity check passed after packaging cleanup.
+- Boot migration verified /root and /etc/ssh ownership; public-key SSH login completed successfully.

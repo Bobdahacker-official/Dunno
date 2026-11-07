@@ -179,6 +179,25 @@ int main(int argc, char **argv) {
             execl("/bin/sh", "sh", NULL);
             return 1;
         }
+        FILE *accounts = fopen("/newroot/etc/passwd", "r");
+        int has_sshd = 0;
+        char accountline[512];
+        if (accounts) {
+            while (fgets(accountline, sizeof accountline, accounts))
+                if (!strncmp(accountline, "sshd:", 5))
+                    has_sshd = 1;
+            fclose(accounts);
+        }
+        if (!has_sshd) {
+            accounts = fopen("/newroot/etc/passwd", "a");
+            if (accounts) {
+                fputs("sshd:x:102:65534:SSH privilege separation:/run/sshd:/bin/false\n", accounts);
+                fclose(accounts);
+            }
+        }
+        char *ownership[] = {"/bin/busybox",     "chown", "-R", "-h", "0:0", "/newroot/root",
+                             "/newroot/etc/ssh", NULL};
+        run(ownership);
         mkdir("/newroot/dev", 0755);
         mkdir("/newroot/proc", 0555);
         mkdir("/newroot/sys", 0555);
