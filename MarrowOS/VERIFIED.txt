@@ -1,0 +1,12 @@
+MarrowOS 0.1 - QEMU boot record
+Kernel: Linux 6.12.107-marrow, built from C/ASM source, x86-64 SMP
+Graphics: 1280x800, 32 bpp, four input devices
+Root: /dev/vda mounted read/write as ext4
+Ethernet: VirtIO eth0, DHCP 10.0.2.15
+Gateway ping: 2 packets sent, 2 received, 0% loss
+Filesystem: persistence.txt survived power-off and subsequent boot
+Native compiler: built hello.c and the C/ASM training engine inside MarrowOS
+Training: 600 epochs completed in the guest, checkpoint saved to ext4
+Evaluation: 256 held-out rows, loss 0.039804, accuracy 98.44%
+Confusion matrix: 124 4 / 0 128
+Screenshots: six QEMU framebuffer captures

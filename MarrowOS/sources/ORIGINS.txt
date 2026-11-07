@@ -1,0 +1,13 @@
+Linux source: linux-source-6.12 6.12.107-1, Debian trixie
+Included archive: linux-source-6.12.tar.xz
+Upstream: https://www.kernel.org/
+Debian sources for the runtime packages listed in config/components.lock:
+https://sources.debian.org/src/busybox/
+https://sources.debian.org/src/tcc/
+https://sources.debian.org/src/wpa/
+https://sources.debian.org/src/iw/
+https://sources.debian.org/src/binutils/
+https://sources.debian.org/src/glibc/
+https://sources.debian.org/src/e2fsprogs/
+https://sources.debian.org/src/wireless-regdb/
+https://sources.debian.org/src/make-dfsg/

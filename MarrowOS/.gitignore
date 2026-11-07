@@ -1,0 +1,4 @@
+/build/
+/MarrowOS.ext4
+/sources/linux-source-*.tar.xz
+__pycache__/
