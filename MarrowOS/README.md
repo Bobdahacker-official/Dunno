@@ -29,3 +29,24 @@ Build custom components with `make`. Build the kernel with
 `scripts/image.sh` with `KERNEL_SRC`, `TOOLS_ROOT`, and `MARROW_WORK` set.
 For an unprivileged Debian toolchain, run `scripts/fetch-tools.sh`, source
 `build/environment.sh`, then build the kernel and run `scripts/image.sh`.
+
+## Workspace update
+
+Dark mode is the default; the top-bar switch saves the theme preference.
+Files supports creating files and folders. Edit text with arrows, Home/End,
+Delete, and Ctrl+S. Terminal is a persistent PTY shell with Python 3.13, pip,
+curl, Git, and the native compiler; Ctrl+C interrupts and Up recalls a command.
+
+Model Editor stores its editable configuration in `/workspace/project.json`.
+Template cycles through local text chat, the C classifier, an OpenAI-compatible
+chat endpoint, and a custom Python training module. Python module and Dataset
+open the respective folders; use New file to add modules or datasets.
+Run module executes the configured Python file. Import copies a local file or
+fetches an HTTP(S) URL into `import_target`. Train saves model weights or a remote
+model connection. Upload sends the selected model to `upload_url` with HTTP PUT.
+Remote chat accepts a key through `api_key_env` or the configured `api_key_file`.
+
+Chat selects saved `.chat.json` models, keeps conversation history on disk,
+and runs inference locally or against the configured API. The bundled local
+model uses learned token transitions and conversation-example retrieval.
+Power User provides live system reports and an editable shell script.

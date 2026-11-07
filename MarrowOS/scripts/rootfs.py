@@ -67,7 +67,8 @@ for p in (root/'usr/lib/x86_64-linux-gnu').iterdir():
 for p in (tools/'usr/lib/firmware').glob('regulatory*'):put(p,'lib/firmware/'+p.name)
 put(tools/'usr/lib/firmware/regulatory.db-debian','lib/firmware/regulatory.db')
 put(tools/'usr/lib/firmware/regulatory.db.p7s-debian','lib/firmware/regulatory.db.p7s')
-for p in project.joinpath('src').glob('*'):put(p,'workspace/src/'+p.name)
+for p in project.joinpath('src').glob('*'):
+ if p.is_file():put(p,'workspace/src/'+p.name)
 put(project/'assets/font.h','workspace/assets/font.h')
 for p in (work/'data').glob('*.csv'):put(p,'workspace/datasets/'+p.name)
 put(work/'spiral.weights','workspace/models/spiral.weights')
@@ -91,3 +92,53 @@ os.chmod(root/'usr/share/udhcpc/default.script',0o755)
 (root/'workspace/src/hello.c').write_text('#include <stdio.h>\nint main(void){puts("Built inside MarrowOS.");return 0;}\n')
 (root/'workspace/config/experiment.conf').write_text('dataset=/workspace/datasets/spiral-train.csv\ntest=/workspace/datasets/spiral-test.csv\nweights=/workspace/models/spiral.weights\narchitecture=2,24,2\nepochs=600\nlearning_rate=0.008\nbatch_size=32\nseed=42\n')
 print(root)
+
+# Python, HTTPS, Git and project tools.
+binary(tools/'usr/bin/python3.13','usr/bin/python3.13')
+p=root/'usr/bin/python3'
+if p.exists() or p.is_symlink():p.unlink()
+p.symlink_to('python3.13')
+shutil.copytree(tools/'usr/lib/python3.13',root/'usr/lib/python3.13',dirs_exist_ok=True)
+for p in (tools/'usr/lib/python3.13/lib-dynload').glob('*.so'):binary(p,'usr/lib/python3.13/lib-dynload/'+p.name)
+for name in ['curl','git']:binary(tools/'usr/bin'/name,'usr/bin/'+name)
+if (tools/'usr/lib/git-core').exists():
+ shutil.copytree(tools/'usr/lib/git-core',root/'usr/lib/git-core',dirs_exist_ok=True)
+ for p in (tools/'usr/lib/git-core').iterdir():
+  if p.is_file() and p.read_bytes()[:4]==b'\x7fELF':binary(p,'usr/lib/git-core/'+p.name)
+shutil.copytree(tools/'usr/share/ca-certificates',root/'usr/share/ca-certificates',dirs_exist_ok=True)
+(root/'etc/ssl/certs').mkdir(parents=True,exist_ok=True)
+with (root/'etc/ssl/certs/ca-certificates.crt').open('wb') as f:
+ for p in (tools/'usr/share/ca-certificates').rglob('*.crt'):f.write(p.read_bytes()+b'\n')
+put(project/'src/studio.py','usr/bin/marrow-studio')
+(root/'usr/bin/marrow-studio').chmod(0o755)
+(root/'workspace/modules').mkdir(exist_ok=True)
+(root/'workspace/datasets/conversation.txt').write_text("hello\tHello. What would you like to work on?\nwhat is marrow\tMarrowOS is a local workspace for building and training models.\nhow do I train a model\tOpen Model Editor, select a template, edit the project configuration, and choose Train.\nwhere are my files\tYour datasets, modules, checkpoints and conversations are saved under /workspace on the ext4 disk.\nwhat is python\tPython is a programming language. You can run Python modules in Model Editor or the terminal.\nwhat is a dataset\tA dataset is a collection of training examples. Import text for a local chat model or CSV rows for the classifier.\n")
+(root/'workspace/power.sh').write_text('uname -a\nfree -m\ndf -h /workspace\n')
+# Build the bundled chat model using the same backend shipped to the guest.
+import importlib.machinery,importlib.util
+loader=importlib.machinery.SourceFileLoader('marrow_studio',str(project/'src/studio.py'));spec=importlib.util.spec_from_loader(loader.name,loader);studio=importlib.util.module_from_spec(spec);loader.exec_module(studio)
+studio.ROOT=root/'workspace';studio.template('local-chat')
+p=__import__('json').loads((root/'workspace/project.json').read_text())
+p['name']='companion';p['model']='/workspace/models/companion.chat.json'
+(root/'workspace/project.json').write_text(__import__('json').dumps(p,indent=2)+'\n')
+local=dict(p,dataset=str(root/'workspace/datasets/conversation.txt'),model=str(root/'workspace/models/companion.chat.json'));studio.fit_local(local)
+
+import zipfile
+for wheel in (tools/'usr/share/python-wheels').glob('*.whl'):
+ with zipfile.ZipFile(wheel) as z:z.extractall(root/'usr/lib/python3/dist-packages')
+(root/'usr/bin/pip').write_text('#!/usr/bin/python3\nfrom pip._internal.cli.main import main\nraise SystemExit(main())\n');(root/'usr/bin/pip').chmod(0o755)
+
+# Preserve multicall Git helpers without duplicating the executable for every command.
+import hashlib
+seen={}
+for p in [root/'usr/bin/git',*sorted((root/'usr/lib/git-core').glob('*'))]:
+ if p.is_file() and not p.is_symlink() and p.read_bytes()[:4]==b'\x7fELF':
+  digest=hashlib.sha256(p.read_bytes()).digest()
+  if digest in seen:p.unlink();p.symlink_to('/'+str(seen[digest].relative_to(root)))
+  else:seen[digest]=p
+(root/'usr/lib/python3.13/EXTERNALLY-MANAGED').unlink(missing_ok=True)
+shutil.copytree(tools/'usr/share/python-wheels',root/'usr/share/python-wheels',dirs_exist_ok=True)
+for alias,target in [('python','python3'),('pip3','pip')]:
+ p=root/'usr/bin'/alias
+ if p.exists() or p.is_symlink():p.unlink()
+ p.symlink_to(target)

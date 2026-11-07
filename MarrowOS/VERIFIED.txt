@@ -10,3 +10,10 @@ Training: 600 epochs completed in the guest, checkpoint saved to ext4
 Evaluation: 256 held-out rows, loss 0.039804, accuracy 98.44%
 Confusion matrix: 124 4 / 0 128
 Screenshots: six QEMU framebuffer captures
+Workspace update:
+- Python 3.13.5, pip 25.1.1, OpenSSL and curl executed inside the guest.
+- HTTP dataset import completed; imported CSV persisted to ext4.
+- Local chat model trained and answered through the Chat UI.
+- Persistent PTY terminal executed python3 --version.
+- Files UI created /workspace/experiments.
+- Dark and light themes captured from the running guest.

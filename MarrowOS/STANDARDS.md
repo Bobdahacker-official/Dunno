@@ -9,3 +9,8 @@
 
 The desktop displays metrics read from training output, network addresses read
 from the system, and free capacity read from the mounted filesystem.
+
+The updated UI uses warm neutral surfaces, a restrained accent, a model picker
+beside chat, and separate project configuration and system controls. References:
+- https://www.assistant-ui.com/examples/claude
+- https://aiuxplayground.com/teardowns/claude/composer

@@ -15,7 +15,7 @@ $(BUILD)/marrow-init: src/init.c | $(BUILD)
 $(BUILD)/marrow-wifi: src/wifi.c | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
 $(BUILD)/marrow-desktop: src/desktop.c assets/font.h | $(BUILD)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< -lm
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< -lm -lutil
 kernel:
 	test -n "$(KERNEL_SRC)"
 	./scripts/kernel-config.sh "$(KERNEL_SRC)"

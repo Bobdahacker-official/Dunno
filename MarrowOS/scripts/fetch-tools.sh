@@ -11,7 +11,7 @@ apt_run() {
   -o "Dir::Cache=$MARROW_WORK/apt/cache" -o "APT::Sandbox::User=$(id -un)" "$@"
 }
 apt_run update
-apt_run --download-only --no-install-recommends -y install linux-source-6.12 flex bison bc libelf-dev libssl-dev busybox-static qemu-system-x86 qemu-utils e2fsprogs cpio grub-pc-bin grub-common xorriso iw wpasupplicant wireless-regdb tcc libtcc-dev
+apt_run --download-only --no-install-recommends -y install linux-source-6.12 flex bison bc libelf-dev libssl-dev busybox-static qemu-system-x86 qemu-utils e2fsprogs cpio grub-pc-bin grub-common xorriso iw wpasupplicant wireless-regdb tcc libtcc-dev python3 python3-venv curl ca-certificates git
 for package in "$MARROW_WORK/apt/cache/archives/"*.deb; do dpkg-deb -x "$package" "$MARROW_WORK/tools"; done
 cp "$MARROW_WORK/tools/usr/include/libelf.h" "$MARROW_WORK/tools/usr/include/gelf.h" "$MARROW_WORK/hostinclude/"
 cp -r "$MARROW_WORK/tools/usr/include/elfutils" "$MARROW_WORK/hostinclude/"
