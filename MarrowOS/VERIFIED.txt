@@ -17,3 +17,13 @@ Workspace update:
 - Persistent PTY terminal executed python3 --version.
 - Files UI created /workspace/experiments.
 - Dark and light themes captured from the running guest.
+Administration update:
+- Expanded Linux kernel compiled with IPv6, nftables, bridges, VLANs, TUN and WireGuard.
+- Wi-Fi modules and firmware added for Intel, Realtek, MediaTek, Atheros and Broadcom families.
+- Train -> rsync destination pipeline completed with a saved model artifact.
+- Boot task was canceled using the global STOP task button; on_boot persisted as false.
+- Restart and Power off top-bar controls exercised in QEMU.
+- OpenSSH listener started on IPv4/IPv6 port 22, then stopped.
+- Full iproute2, util-linux, procps and Debian bootstrap tools executed in the guest.
+- Final train -> model delivery -> automatic power-off pipeline completed.
+- Final filesystem integrity check passed after packaging cleanup.

@@ -5,8 +5,8 @@ training engine, compiler front end, and Wi-Fi helper are C; the dot-product
 routine is x86-64 assembly. Linux 6.12.107 was compiled for this image.
 
 Run `./run.sh` with QEMU installed. On first launch, the disk is restored from
-`artifacts/MarrowOS-runtime.tar.gz`. The boot ISO and screenshots are included.
-The 2 GiB ext4 disk holds the system and `/workspace`; edits survive shutdown.
+the runtime archive parts in `artifacts/`. The boot ISO and screenshots are included.
+The 16 GiB ext4 disk holds the system and `/workspace`; edits survive shutdown.
 F1-F6 select views. Ctrl+Alt+F2 opens a text console; Ctrl+Alt+F1 returns.
 In Files: arrows select, Enter opens, E edits, Ctrl+S saves, Esc leaves editing.
 
@@ -50,3 +50,28 @@ Chat selects saved `.chat.json` models, keeps conversation history on disk,
 and runs inference locally or against the configured API. The bundled local
 model uses learned token transitions and conversation-example retrieval.
 Power User provides live system reports and an editable shell script.
+
+## Power and administration
+
+Restart, Power off, and STOP task are always visible in the top bar. Model Editor
+uses labeled fields; local training needs no key. A Provider API key is a token
+issued by an external model provider, saved with private file permissions.
+
+Power User has Tasks, VPS / personal tools, Desktop environments, and Shell
+script sections. Name and save task profiles, choose a training step and a model
+destination (HTTP PUT URL, local path, or rsync-over-SSH destination), then choose
+none, poweroff, or restart as the final action. Boot tasks have a start delay and
+a final cancellation window. STOP task cancels the process group and disables
+future boot starts. Next saved task selects another saved profile.
+
+The system uses Linux IPv4/IPv6, cfg80211/mac80211, nftables, bridges, VLANs, TUN
+and WireGuard, with expanded PCIe/USB drivers and firmware. Administration tools
+include OpenSSH, rsync, tmux, htop, iproute2, and util-linux. SSH uses keys only;
+add your public key to `/root/.ssh/authorized_keys` before enabling the server.
+The launcher forwards localhost port 2222 to guest port 22; override
+`MARROW_SSH_PORT` to change it.
+
+Desktop environments installs XFCE, MATE, or Cinnamon into `/opt/desktops` using
+Debian packages, then switches the saved session. The native MarrowOS session is
+the default. Alternate sessions include Return to MarrowOS and STOP MarrowOS
+task launchers. The persistent disk now has 16 GiB virtual capacity.

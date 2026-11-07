@@ -14,6 +14,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 static int stopping;
+static volatile sig_atomic_t reload_desktop = 0;
+static void reload_session(int sig) {
+    (void)sig;
+    reload_desktop = 1;
+}
 static void stop(int sig) {
     stopping = sig;
 }
@@ -108,7 +113,15 @@ static pid_t shell(const char *dev) {
 static pid_t desktop(void) {
     pid_t p = fork();
     if (!p) {
-        execl("/usr/bin/marrow-desktop", "marrow-desktop", NULL);
+        setsid();
+        int vt = open("/dev/tty1", O_RDWR);
+        if (vt >= 0) {
+            ioctl(vt, TIOCSCTTY, 0);
+            dup2(vt, 0);
+            if (vt > 2)
+                close(vt);
+        }
+        execl("/usr/bin/python3", "python3", "/usr/bin/marrow-ops", "session", NULL);
         perror("desktop");
         _exit(127);
     }
@@ -129,6 +142,10 @@ int main(int argc, char **argv) {
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGUSR2, &sa, NULL);
+    struct sigaction reload_sa = {0};
+    reload_sa.sa_handler = reload_session;
+    sigemptyset(&reload_sa.sa_mask);
+    sigaction(SIGHUP, &reload_sa, NULL);
     umask(022);
     mkdir("/dev", 0755);
     mkdir("/proc", 0555);
@@ -188,6 +205,17 @@ int main(int argc, char **argv) {
     setenv("HOME", "/root", 1);
     setenv("TERM", "linux", 1);
     setenv("PS1", "marrow:\\w # ", 1);
+    char *drivers[] = {"sh", "-c",
+                       "for f in /sys/bus/pci/devices/*/modalias /sys/bus/usb/devices/*/modalias; "
+                       "do test -f \"$f\" && modprobe \"$(cat \"$f\")\" 2>/dev/null; done; mdev -s",
+                       NULL};
+    char *dep[] = {"depmod", "-a", NULL};
+    run(dep);
+    run(drivers);
+    if (!fork()) {
+        execlp("mdev", "mdev", "-d", "-f", NULL);
+        _exit(1);
+    }
     char *lo[] = {"ip", "link", "set", "lo", "up", NULL};
     run(lo);
     DIR *dir = opendir("/sys/class/net");
@@ -226,8 +254,16 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 100 && access("/dev/fb0", F_OK); i++)
         usleep(100000);
     pid_t gui = desktop(), serial = shell("/dev/ttyS0"), tty = shell("/dev/tty2");
+    if (!fork()) {
+        execl("/usr/bin/python3", "python3", "/usr/bin/marrow-ops", "boot", NULL);
+        _exit(1);
+    }
     puts("MARROW_SYSTEM_READY root=ext4 workspace=/workspace");
     while (!stopping) {
+        if (reload_desktop) {
+            reload_desktop = 0;
+            kill(-gui, SIGTERM);
+        }
         int status;
         pid_t p = waitpid(-1, &status, 0);
         if (p < 0) {

@@ -12,7 +12,7 @@ def atomic(path,data):
   if os.path.exists(tmp):os.unlink(tmp)
 def config():return json.loads((ROOT/'project.json').read_text())
 def template(kind):
- p={'name':'my-model','template':kind,'dataset':'/workspace/datasets/conversation.txt','model':'/workspace/models/my-model.chat.json','import_source':'','import_target':'/workspace/datasets/imported.txt','upload_url':'','api_url':'','api_model':'','api_key_env':'MARROW_API_KEY','api_key_file':'/workspace/config/api-key','temperature':0.8,'max_tokens':160,'module':'/workspace/modules/model.py'}
+ p={'name':'my-model','template':kind,'dataset':'/workspace/datasets/conversation.txt','model':'/workspace/models/my-model.chat.json','import_source':'','import_target':'/workspace/datasets/imported.txt','upload_url':'','api_url':'','api_model':'','api_key_env':'MODEL_PROVIDER_API_KEY','api_key_file':'/workspace/config/api-key','temperature':0.8,'max_tokens':160,'module':'/workspace/modules/model.py'}
  if kind=='classifier':p.update(dataset='/workspace/datasets/spiral-train.csv',model='/workspace/models/custom.weights',epochs=600)
  if kind=='remote':p['api_url']='http://10.0.2.2:11434/v1/chat/completions'
  atomic(ROOT/'project.json',json.dumps(p,indent=2)+'\n')
@@ -54,7 +54,7 @@ def reply(model,prompt):
  if m['type']=='remote':
   history=ROOT/'runs/chat-history.json';messages=json.loads(history.read_text()) if history.exists() else []
   messages.append({'role':'user','content':prompt});headers={'Content-Type':'application/json'}
-  key=os.getenv(m.get('key_env','MARROW_API_KEY'),'')
+  key=os.getenv(m.get('key_env','MODEL_PROVIDER_API_KEY'),'')
   if not key and m.get('key_file') and pathlib.Path(m['key_file']).exists():key=pathlib.Path(m['key_file']).read_text().strip()
   if key:headers['Authorization']='Bearer '+key
   req=urllib.request.Request(m['url'],data=json.dumps({'model':m['model'],'messages':messages[-20:],'temperature':m.get('temperature',.8),'max_tokens':m.get('max_tokens',160)}).encode(),headers=headers)
@@ -75,7 +75,13 @@ def reply(model,prompt):
  return re.sub(r'\s+([.,!?;:])',r'\1',' '.join(out))
 def main():
  a=sys.argv[1];p=config() if a not in ('template','chat') else None
- if a=='template':template(sys.argv[2])
+ if a=='configure':
+  values=json.loads(pathlib.Path('/run/marrow-form.json').read_text());p.update({k:v for k,v in values.items() if k!='provider_key'});p['epochs']=int(p.get('epochs') or 600)
+  if p['epochs']<1 or p['epochs']>100000:raise ValueError('Epochs must be 1..100000')
+  if values.get('provider_key'):
+   atomic(p.get('api_key_file') or '/workspace/config/api-key',values['provider_key']);os.chmod(p.get('api_key_file') or '/workspace/config/api-key',0o600)
+  atomic(ROOT/'project.json',json.dumps(p,indent=2)+'\n');print('Project settings saved')
+ elif a=='template':template(sys.argv[2])
  elif a=='train':train()
  elif a=='import':transfer(p['import_source'],p['import_target'])
  elif a=='upload':

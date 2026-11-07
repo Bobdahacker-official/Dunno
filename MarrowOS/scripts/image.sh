@@ -9,13 +9,16 @@ make -C "$project" BUILD="$MARROW_WORK" all
 "$MARROW_WORK/marrow-train" generate "$MARROW_WORK/data"
 "$MARROW_WORK/marrow-train" train "$MARROW_WORK/data/spiral-train.csv" "$MARROW_WORK/spiral.weights" 600 > "$MARROW_WORK/training.log"
 python3 "$project/scripts/rootfs.py"
+make -C "$KERNEL_SRC" modules_install INSTALL_MOD_PATH="$MARROW_WORK/rootfs" DEPMOD=true
+release=$(make -s -C "$KERNEL_SRC" kernelrelease)
+"$MARROW_WORK/rootfs/bin/busybox" depmod -b "$MARROW_WORK/rootfs" "$release"
 # mke2fs populates the disk directly, without loop devices or privileged mounts.
 image="$project/MarrowOS.ext4"
 if test -e "$image"; then
     echo "Refusing to replace existing MarrowOS.ext4. Move it aside to create a fresh workspace." >&2
     exit 1
 fi
-truncate -s 2G "$image"
+truncate -s 16G "$image"
 mke2fs -q -t ext4 -F -L MarrowRoot -m 0 -O ^metadata_csum_seed -d "$MARROW_WORK/rootfs" "$image"
 mkdir -p "$MARROW_WORK/initramfs/bin" "$MARROW_WORK/initramfs/dev" "$MARROW_WORK/iso/boot/grub"
 mkdir -p "$MARROW_WORK/initramfs/lib/firmware"

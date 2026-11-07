@@ -10,7 +10,9 @@ root.mkdir(parents=True,exist_ok=True)
 for p in ['bin','sbin','usr/bin','usr/sbin','usr/lib','lib','lib64','etc','proc','sys','dev','run','tmp','root','var/log','workspace/datasets','workspace/models','workspace/runs','workspace/src','workspace/config','boot']:(root/p).mkdir(parents=True,exist_ok=True)
 os.chmod(root/'tmp',0o1777)
 def put(src,dst):
- dst=root/str(dst).lstrip('/');dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dst,follow_symlinks=True)
+ dst=root/str(dst).lstrip('/');dst.parent.mkdir(parents=True,exist_ok=True)
+ if dst.is_symlink():dst.unlink()
+ shutil.copy2(src,dst,follow_symlinks=True)
 def binary(src,dst):
  put(src,dst)
  env=dict(os.environ,LD_LIBRARY_PATH=str(tools/'usr/lib/x86_64-linux-gnu'))
@@ -41,12 +43,16 @@ for name in ['init','marrow-dhcp']:
  if p.exists() or p.is_symlink():p.unlink()
  p.symlink_to('marrow-init')
 for name in ['wpa_supplicant','wpa_cli','iw']:
- binary(tools/'usr/sbin'/name,'usr/sbin/'+name)
+ src=tools/'usr/sbin'/name
+ if not src.exists():src=tools/'usr/bin'/name
+ binary(src,'usr/sbin/'+name)
 binary(tools/'usr/bin/wpa_passphrase','usr/bin/wpa_passphrase')
 binary(tools/'usr/bin/tcc','usr/bin/tcc')
 binary('/usr/bin/make','usr/bin/make')
 for name in ['mke2fs','e2fsck','debugfs','resize2fs']:
- binary(tools/'usr/sbin'/name,'usr/sbin/'+name)
+ src=tools/'usr/sbin'/name
+ if not src.exists():src=tools/'usr/bin'/name
+ binary(src,'usr/sbin/'+name)
 binary(tools/'usr/bin/x86_64-linux-gnu-as','usr/bin/as')
 put(tools/'usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2','usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2')
 for link in ['cc']:
@@ -102,6 +108,7 @@ shutil.copytree(tools/'usr/lib/python3.13',root/'usr/lib/python3.13',dirs_exist_
 for p in (tools/'usr/lib/python3.13/lib-dynload').glob('*.so'):binary(p,'usr/lib/python3.13/lib-dynload/'+p.name)
 for name in ['curl','git']:binary(tools/'usr/bin'/name,'usr/bin/'+name)
 if (tools/'usr/lib/git-core').exists():
+ shutil.rmtree(root/'usr/lib/git-core',ignore_errors=True)
  shutil.copytree(tools/'usr/lib/git-core',root/'usr/lib/git-core',dirs_exist_ok=True)
  for p in (tools/'usr/lib/git-core').iterdir():
   if p.is_file() and p.read_bytes()[:4]==b'\x7fELF':binary(p,'usr/lib/git-core/'+p.name)
@@ -142,3 +149,61 @@ for alias,target in [('python','python3'),('pip3','pip')]:
  p=root/'usr/bin'/alias
  if p.exists() or p.is_symlink():p.unlink()
  p.symlink_to(target)
+
+# Administration utilities and the isolated Debian desktop bootstrap.
+for name in ['dpkg','dpkg-deb','dpkg-split','gpgv','rsync','tmux','htop','ssh','scp','sftp','ssh-keygen']:
+ binary(tools/'usr/bin'/name,'usr/bin/'+name)
+for name in ['ip','ss','bridge','nft','sshd']:
+ src=tools/'usr/sbin'/name
+ if not src.exists():src=tools/'usr/bin'/name
+ binary(src,'usr/sbin/'+name)
+# Prefer full iproute2 over BusyBox applets for bridges, VLANs and routing policy.
+for name in ['ip','ss','bridge']:
+ p=root/'bin'/name
+ if p.exists() or p.is_symlink():p.unlink()
+ p.symlink_to('/usr/sbin/'+name)
+for name in ['wg','wg-quick']:
+ src=tools/'usr/bin'/name
+ if src.exists():
+  if src.read_bytes()[:4]==b'\x7fELF':binary(src,'usr/bin/'+name)
+  else:put(src,'usr/bin/'+name)
+put(tools/'usr/sbin/debootstrap','usr/sbin/debootstrap')
+for directory in ['usr/share/debootstrap','usr/share/dpkg','usr/share/keyrings']:
+ shutil.copytree(tools/directory,root/directory,dirs_exist_ok=True)
+shutil.rmtree(root/'lib/firmware',ignore_errors=True)
+shutil.copytree(tools/'usr/lib/firmware',root/'lib/firmware',symlinks=True)
+put(tools/'usr/lib/firmware/regulatory.db-debian','lib/firmware/regulatory.db')
+put(tools/'usr/lib/firmware/regulatory.db.p7s-debian','lib/firmware/regulatory.db.p7s')
+put(project/'src/ops.py','usr/bin/marrow-ops');(root/'usr/bin/marrow-ops').chmod(0o755)
+(root/'etc/mdev.conf').write_text('$MODALIAS=.* 0:0 660 @modprobe "$MODALIAS"\n')
+(root/'etc/ssh').mkdir(parents=True,exist_ok=True)
+(root/'etc/ssh/sshd_config').write_text('Port 22\nHostKey /etc/ssh/ssh_host_ed25519_key\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nUsePAM no\nSubsystem sftp internal-sftp\n')
+(root/'etc/passwd').write_text('root:x:0:0:Marrow Developer:/root:/bin/sh\nsshd:x:100:65534:SSH privilege separation:/run/sshd:/bin/false\n_sshd:x:101:65534:SSH privilege separation:/run/sshd:/bin/false\n')
+(root/'etc/shadow').write_text('root::20000:0:99999:7:::\n');(root/'etc/shadow').chmod(0o600)
+(root/'workspace/config/task.json').write_text(__import__('json').dumps({'name':'default','train':True,'destination':'','after':'none','on_boot':False,'delay_seconds':30,'finish_grace_seconds':15,'command':''},indent=2)+'\n')
+(root/'workspace/config/desktop').write_text('marrow\n')
+
+binary('/usr/bin/bash','usr/bin/bash')
+for p in (tools/'usr/lib/openssh').iterdir():
+ if p.is_file() and p.read_bytes()[:4]==b'\x7fELF':binary(p,'usr/lib/openssh/'+p.name)
+
+binary(tools/'usr/bin/wget','usr/bin/wget')
+for name in ['ps','free','uptime','vmstat','pgrep','pkill']:
+ binary(tools/'usr/bin'/name,'usr/bin/'+name)
+p=root/'bin/sh'
+if p.exists() or p.is_symlink():p.unlink()
+p.symlink_to('/usr/bin/bash')
+binary(tools/'usr/bin/perl','usr/bin/perl')
+for directory in ['usr/lib/x86_64-linux-gnu/perl-base','usr/lib/x86_64-linux-gnu/perl','usr/lib/x86_64-linux-gnu/perl5','usr/share/perl','usr/share/perl5']:
+ if (tools/directory).exists():
+  shutil.rmtree(root/directory,ignore_errors=True)
+  shutil.copytree(tools/directory,root/directory,symlinks=True)
+for p in (tools/'usr/lib/x86_64-linux-gnu/perl-base').rglob('*.so'):
+ binary(p,str(p.relative_to(tools)))
+
+(root/'workspace/config/tasks').mkdir(exist_ok=True)
+shutil.copy2(root/'workspace/config/task.json',root/'workspace/config/tasks/default.json')
+for name in ['mount','umount','lsblk','setsid','unshare','nsenter']:
+ binary(tools/'usr/bin'/name,'usr/bin/'+name)
+
+(root/'etc/group').write_text('root:x:0:\nnogroup:x:65534:\n')

@@ -4,4 +4,4 @@ Pass 2: Checking directory structure
 Pass 3: Checking directory connectivity
 Pass 4: Checking reference counts
 Pass 5: Checking group summary information
-MarrowRoot: 5784/131072 files (0.1% non-contiguous), 67463/524288 blocks
+MarrowRoot: 9835/1048576 files (1.0% non-contiguous), 238955/4194304 blocks

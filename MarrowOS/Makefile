@@ -19,7 +19,7 @@ $(BUILD)/marrow-desktop: src/desktop.c assets/font.h | $(BUILD)
 kernel:
 	test -n "$(KERNEL_SRC)"
 	./scripts/kernel-config.sh "$(KERNEL_SRC)"
-	$(MAKE) -C "$(KERNEL_SRC)" -j$${JOBS:-3} bzImage
+	$(MAKE) -C "$(KERNEL_SRC)" -j$${JOBS:-3} bzImage modules
 run:
 	./run.sh
 clean:

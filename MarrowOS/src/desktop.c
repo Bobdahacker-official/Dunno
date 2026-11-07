@@ -334,6 +334,25 @@ static void save_editor(void) {
         notify("Save failed; original file retained.");
     }
 }
+static off_t job_offset = 0;
+static void job_output(void) {
+    FILE *f = fopen("/workspace/runs/job.log", "r");
+    if (!f)
+        return;
+    if (fseeko(f, job_offset, SEEK_SET)) {
+        fclose(f);
+        return;
+    }
+    char b[8193];
+    size_t n;
+    int chunks = 0;
+    while (chunks++ < 8 && (n = fread(b, 1, sizeof b - 1, f))) {
+        b[n] = 0;
+        append_term(b);
+        job_offset = ftello(f);
+    }
+    fclose(f);
+}
 static void spawn_job(char *const args[], const char *title) {
     if (child) {
         notify("Wait for the current job to finish.");
@@ -344,6 +363,7 @@ static void spawn_job(char *const args[], const char *title) {
         notify(strerror(errno));
         return;
     }
+    job_offset = 0;
     child = fork();
     if (child == 0) {
         dup2(fd, 1);
@@ -494,7 +514,7 @@ static void update_network(void) {
 }
 static void connect_wifi(void) {
     if (!wifi[0]) {
-        notify("Plug in an RTL8187 USB adapter or use an ath9k PCI adapter.");
+        notify("Attach a wireless interface. Linux drivers are loaded automatically.");
         return;
     }
     if (!ssid[0] || strlen(pass) < 8) {
@@ -595,9 +615,10 @@ static void common(void) {
     text(248, 23, &font14, MUTED, "Workspace");
     text(335, 23, &font14, 0x536057, "/");
     text(356, 23, &font14, TEXT, names[tab]);
-    button(930, 12, 90, light ? "Dark" : "Light", 0, 1);
-    circle(1041, 33, 4, network_up ? LIME : GOLD);
-    text(1053, 23, &font12, MUTED, network_up ? "Ethernet / online" : "Network / offline");
+    button(720, 12, 82, light ? "Dark" : "Light", 0, 1);
+    button(813, 12, 110, "Restart", 0, 1);
+    button(934, 12, 115, "Power off", 0, 1);
+    button(1060, 12, 110, "STOP task", 0, 1);
     time_t t = time(NULL);
     struct tm tm;
     localtime_r(&t, &tm);
@@ -807,12 +828,12 @@ static void network(void) {
     text(432, 282, &font14, TEXT, iface);
     text(276, 317, &font14, MUTED, "IPv4 address");
     text(432, 317, &font14, TEXT, ip);
-    text(276, 365, &font12, MUTED, "VirtIO / Intel e1000 / Realtek RTL8139");
+    text(276, 365, &font12, MUTED, "Linux IPv4 / IPv6 / routing / VPN");
     roundrect(750, 210, 497, 199, 9, PANEL);
     text(774, 230, &font18, TEXT, "Wireless hardware");
     text(774, 279, &font14, TEXT, wifi[0] ? wifi : "No wireless adapter attached");
-    text(774, 315, &font14, MUTED, "Atheros ath9k PCI / PCIe");
-    text(774, 344, &font14, MUTED, "Realtek RTL8187 USB");
+    text(774, 315, &font14, MUTED, "Intel / Atheros / Realtek / MediaTek");
+    text(774, 344, &font14, MUTED, "Broadcom / PCIe / USB firmware");
     text(774, 376, &font12, MUTED, "WPA2 via wpa_supplicant / nl80211");
     roundrect(251, 430, 996, 310, 9, PANEL);
     text(275, 451, &font18, TEXT, "Join a wireless network");
@@ -867,18 +888,218 @@ static void cursor(void) {
 }
 static void switch_tab(int);
 
+static char keychar(int);
+static char project_values[14][1024];
+static const char *project_keys[] = {"name",     "dataset",       "model",         "module",
+                                     "epochs",   "import_source", "import_target", "upload_url",
+                                     "api_url",  "api_model",     "provider_key",  "api_key_file",
+                                     "template", "api_key_env"};
+static const char *project_labels[] = {"Project name",
+                                       "Training dataset",
+                                       "Saved model",
+                                       "Python module",
+                                       "Training epochs",
+                                       "Import from file or URL",
+                                       "Import destination",
+                                       "Send model to URL (HTTP PUT)",
+                                       "Chat server URL",
+                                       "Provider model name",
+                                       "Provider API key (optional)",
+                                       "Key file",
+                                       "Template",
+                                       "Key environment variable"};
+static char task_values[8][1024];
+static const char *task_keys[] = {"train",         "destination",          "after",   "on_boot",
+                                  "delay_seconds", "finish_grace_seconds", "command", "name"};
+static const char *task_labels[] = {"Train first (true / false)",
+                                    "Send model to URL, local path or user@host:path",
+                                    "When finished: none / poweroff / restart",
+                                    "Start on boot (true / false)",
+                                    "Start delay in seconds",
+                                    "Stop window before final action (seconds)",
+                                    "Additional shell command (optional)",
+                                    "Task name (letters, numbers, dash)"};
+static int form_focus = -1, power_section = 0, desktop_choice = 0;
+static const char *desktops[] = {"marrow", "xfce", "mate", "cinnamon"};
+static void scalar(const char *json, const char *key, char *out, size_t cap) {
+    char needle[128];
+    snprintf(needle, sizeof needle, "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    out[0] = 0;
+    if (!p)
+        return;
+    p = strchr(p, ':');
+    if (!p)
+        return;
+    p++;
+    while (*p == ' ' || *p == '\n')
+        p++;
+    size_t i = 0;
+    if (*p == '"') {
+        p++;
+        while (*p && *p != '"' && i + 1 < cap) {
+            char c = *p++;
+            if (c == '\\' && *p) {
+                c = *p++;
+                if (c == 'n')
+                    c = '\n';
+                if (c == 't')
+                    c = '\t';
+            }
+            out[i++] = c;
+        }
+    } else {
+        while (*p && *p != ',' && *p != '}' && *p != '\n' && i + 1 < cap)
+            out[i++] = *p++;
+        while (i && out[i - 1] == ' ')
+            i--;
+    }
+    out[i] = 0;
+}
+static void form_load(int tasks) {
+    char data[32768] = "";
+    FILE *f = fopen(tasks ? "/workspace/config/task.json" : "/workspace/project.json", "r");
+    if (f) {
+        size_t n = fread(data, 1, sizeof data - 1, f);
+        data[n] = 0;
+        fclose(f);
+    }
+    for (int i = 0; i < (tasks ? 8 : 14); i++)
+        scalar(data, tasks ? task_keys[i] : project_keys[i],
+               tasks ? task_values[i] : project_values[i], 1024);
+    if (!tasks && !project_values[4][0])
+        snprintf(project_values[4], 1024, "600");
+    form_focus = -1;
+}
+static void json_text(FILE *f, const char *s) {
+    fputc('"', f);
+    for (; *s; s++) {
+        if (*s == '"' || *s == '\\')
+            fputc('\\', f);
+        if (*s == '\n') {
+            fputs("\\n", f);
+            continue;
+        }
+        if (*s == '\t') {
+            fputs("\\t", f);
+            continue;
+        }
+        fputc(*s, f);
+    }
+    fputc('"', f);
+}
+static int form_save(int tasks) {
+    FILE *f = fopen("/run/marrow-form.json", "w");
+    if (!f)
+        return 0;
+    chmod("/run/marrow-form.json", 0600);
+    fputs("{", f);
+    for (int i = 0; i < (tasks ? 8 : 14); i++) {
+        if (i)
+            fputc(',', f);
+        json_text(f, tasks ? task_keys[i] : project_keys[i]);
+        fputc(':', f);
+        json_text(f, tasks ? task_values[i] : project_values[i]);
+    }
+    fputs("}", f);
+    fclose(f);
+    pid_t p = fork();
+    if (!p) {
+        int log = open("/workspace/runs/job.log", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        dup2(log, 1);
+        dup2(log, 2);
+        execl("/usr/bin/python3", "python3",
+              tasks ? "/usr/bin/marrow-ops" : "/usr/bin/marrow-studio", "configure", NULL);
+        _exit(127);
+    }
+    int status;
+    while (waitpid(p, &status, 0) < 0 && errno == EINTR) {
+    }
+    unlink("/run/marrow-form.json");
+    if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+        notify("Check the settings. Details are in runs/job.log.");
+        return 0;
+    }
+    notify("Settings saved");
+    return 1;
+}
+static void field(int x, int y, int w, const char *title, const char *value, int active,
+                  int secret) {
+    text(x, y, &font12, MUTED, title);
+    roundrect(x, y + 22, w, 32, 5, active ? 0x40372e : BG);
+    char display[110];
+    snprintf(display, sizeof display, "%.90s", value);
+    if (secret)
+        for (size_t i = 0; i < strlen(display); i++)
+            display[i] = '*';
+    text(x + 10, y + 27, &font14, TEXT, display);
+    if (active) {
+        int px = x + 10;
+        for (char *p = display; *p; p++) {
+            unsigned char c = *p;
+            if (c >= 32 && c <= 126)
+                px += font14.advance[c - 32];
+        }
+        if (px < x + w - 4)
+            rect(px, y + 29, 2, 19, LIME);
+    }
+}
+static int form_key(int c) {
+    if (!((tab == 6) || (tab == 8 && power_section == 0)) || form_focus < 0)
+        return 0;
+    int tasks = tab == 8;
+    char *value = tasks ? task_values[form_focus] : project_values[form_focus];
+    size_t n = strlen(value);
+    if (ctrl && c == KEY_S) {
+        form_save(tasks);
+        return 1;
+    }
+    if (c == KEY_TAB || c == KEY_ENTER) {
+        form_focus = (form_focus + 1) % (tasks ? 8 : 11);
+        return 1;
+    }
+    if (c == KEY_BACKSPACE) {
+        if (n)
+            value[n - 1] = 0;
+        return 1;
+    }
+    if (c == KEY_ESC) {
+        form_focus = -1;
+        return 1;
+    }
+    char ch = keychar(c);
+    if (ch && n < 1023) {
+        value[n] = ch;
+        value[n + 1] = 0;
+    }
+    return 1;
+}
+
 static void studio(void) {
-    button(1080, 126, 167, "Run module", 0, !child);
+    button(850, 126, 190,
+           !strcmp(project_values[12], "remote")       ? "Hosted chat"
+           : !strcmp(project_values[12], "python")     ? "Custom Python"
+           : !strcmp(project_values[12], "classifier") ? "2D classifier"
+                                                       : "Local text chat",
+           0, !child);
+    button(1055, 126, 192, "Run Python module", 0, !child);
     roundrect(251, 210, 996, 410, 10, PANEL);
-    text(274, 226, &font16, TEXT, "Project configuration");
-    pill(1090, 227, editing ? "Editing" : "Saved", LIME);
-    editor_draw(274, 262, 940, 14);
-    const char *b[] = {"Template", "Python module", "Dataset",
-                       "Import",   "Train / save",  "Upload model"};
+    for (int i = 0; i < 11; i++) {
+        int x = 274 + (i % 2) * 484, y = 230 + (i / 2) * 62;
+        if (i >= 8 && strcmp(project_values[12], "remote"))
+            continue;
+        field(x, y, 455, project_labels[i], project_values[i], form_focus == i, i == 10);
+    }
+    const char *b[] = {"Save settings", "Python files", "Dataset files",
+                       "Import data",   "Train / save", "Send model"};
     for (int i = 0; i < 6; i++)
         button(251 + i * 166, 650, 156, b[i], i == 4, 1);
-    text(251, 713, &font12, MUTED,
-         "Ctrl+S saves. Import accepts a local path or HTTP(S) URL. Transfers run in Terminal.");
+    text(251, 714, &font12, MUTED,
+         !strcmp(project_values[12], "remote")
+             ? "Provider API key: get this from your hosted model provider. It is stored privately "
+               "on disk."
+             : "Local training needs no API key. Select a template above, then choose your dataset "
+               "and model output.");
 }
 static void chatpage(void) {
     button(780, 126, 150, "New chat", 0, 1);
@@ -908,16 +1129,71 @@ static void chatpage(void) {
     button(1110, 675, 110, child ? "Waiting" : "Send", 1, !child);
 }
 static void powerpage(void) {
-    roundrect(251, 210, 996, 410, 10, PANEL);
-    text(274, 226, &font16, TEXT, "Shell script");
-    editor_draw(274, 262, 940, 14);
-    const char *b[] = {"Processes", "Memory", "Storage", "Network", "Python", "Run script"};
-    for (int i = 0; i < 6; i++)
-        button(251 + i * 166, 650, 156, b[i], i == 5, 1);
-    text(251, 713, &font12, MUTED,
-         "Edit the script above. Ctrl+S saves. System reports open in Terminal.");
+    button(1010, 126, 237, "Next saved task", 0, !child);
+    const char *sections[] = {"Tasks", "VPS / personal tools", "Desktop environments",
+                              "Shell script"};
+    for (int i = 0; i < 4; i++)
+        button(251 + i * 249, 202, 239, sections[i], power_section == i, 1);
+    roundrect(251, 255, 996, 385, 10, PANEL);
+    if (power_section == 0) {
+        for (int i = 0; i < 8; i++)
+            field(274 + (i % 2) * 484, 274 + (i / 2) * 75, 455, task_labels[i], task_values[i],
+                  form_focus == i, 0);
+        button(251, 660, 185, "Save task", 0, 1);
+        button(450, 660, 185, "Run task", 1, 1);
+        button(650, 660, 185, "STOP task", 0, 1);
+        button(850, 660, 185, "Task log", 0, 1);
+        char state[2048] = "", value[200] = "Idle";
+        FILE *f = fopen("/workspace/runs/task-status.json", "r");
+        if (f) {
+            size_t n = fread(state, 1, sizeof state - 1, f);
+            state[n] = 0;
+            fclose(f);
+            scalar(state, "state", value, sizeof value);
+        }
+        label(1060, 672, &font14, TEXT, "%s", value);
+        text(251, 720, &font12, MUTED,
+             "Stop task cancels the running process and disables automatic start on boot.");
+    }
+    if (power_section == 1) {
+        const char *labels[] = {"Services / ports", "CPU / memory",     "Storage",
+                                "Routing / VPN",    "SSH server on",    "SSH server off",
+                                "Create SSH key",   "Workspace backup", "System logs",
+                                "Kernel settings",  "Firewall rules",   "Task log"};
+        for (int i = 0; i < 12; i++)
+            button(274 + (i % 3) * 320, 280 + (i / 3) * 80, 300, labels[i], 0, 1);
+    }
+    if (power_section == 2) {
+        text(274, 278, &font18, TEXT,
+             "Switch desktop environments (This may make MarrowOS not work!)");
+        const char *labels[] = {"MarrowOS (default)", "XFCE", "MATE", "Cinnamon"};
+        for (int i = 0; i < 4; i++)
+            button(274 + i * 239, 330, 222, labels[i], desktop_choice == i, 1);
+        button(274, 405, 270, "Install selected desktop", 0, !child);
+        button(560, 405, 270, "Switch now", 1, !child);
+        text(274, 475, &font14, MUTED,
+             "Alternate desktops install into /opt/desktops using Debian packages.");
+        text(274, 510, &font14, MUTED,
+             "They share /workspace. Select MarrowOS to restore the default session.");
+        text(274, 545, &font14, MUTED,
+             "An alternate desktop also includes a Return to MarrowOS launcher.");
+    }
+    if (power_section == 3) {
+        editor_draw(274, 275, 940, 13);
+        button(251, 660, 185, "Save script", 0, 1);
+        button(450, 660, 185, "Run script", 1, !child);
+    }
 }
 static void action(const char *a) {
+    if (tab == 6 && !strcmp(a, "settings")) {
+        form_save(0);
+        return;
+    }
+    if (tab == 6 && strcmp(a, "template") && strcmp(a, "model-next") && strcmp(a, "send") &&
+        strcmp(a, "clear")) {
+        if (!form_save(0))
+            return;
+    }
     if (!strcmp(a, "template")) {
         const char *t[] = {"local-chat", "classifier", "remote", "python"};
         template_id = (template_id + 1) % 4;
@@ -1072,8 +1348,15 @@ static void switch_tab(int t) {
     netfield = 0;
     if (t == 2)
         load_entries();
-    if (t == 6 || t == 8) {
-        snprintf(selected, sizeof selected, "/workspace/%s", t == 6 ? "project.json" : "power.sh");
+    if (t == 6) {
+        form_load(0);
+        editing = 0;
+    }
+    if (t == 8) {
+        form_load(1);
+    }
+    if (t == 8) {
+        snprintf(selected, sizeof selected, "/workspace/%s", "power.sh");
         FILE *f = fopen(selected, "r");
         editor[0] = 0;
         if (f) {
@@ -1082,13 +1365,13 @@ static void switch_tab(int t) {
             fclose(f);
         }
         editor_writable = 1;
-        editing = 1;
+        editing = power_section == 3;
         editor_pos = 0;
     }
     dirty = 1;
 }
 static void click(void) {
-    if (inside(930, 16, 90, 32)) {
+    if (inside(720, 12, 82, 40)) {
         light = !light;
         FILE *f = fopen("/workspace/config/theme", "w");
         if (f) {
@@ -1098,23 +1381,139 @@ static void click(void) {
         dirty = 1;
         return;
     }
-    if (tab == 6 && inside(1080, 126, 167, 40)) {
-        action("module");
+    if (inside(813, 12, 110, 40)) {
+        sync();
+        kill(1, SIGTERM);
         return;
     }
-    if (tab == 6 || tab == 8) {
-        if (inside(251, 211, 996, 380)) {
-            editing = 1;
-            editor_pos = 0;
+    if (inside(934, 12, 115, 40)) {
+        sync();
+        kill(1, SIGUSR2);
+        return;
+    }
+    if (inside(1060, 12, 110, 40)) {
+        int fd = open("/workspace/runs/task.stop", O_CREAT | O_WRONLY, 0600);
+        if (fd >= 0)
+            close(fd);
+        pid_t p = fork();
+        if (!p) {
+            execl("/usr/bin/python3", "python3", "/usr/bin/marrow-ops", "stop", NULL);
+            _exit(1);
         }
-        for (int i = 0; i < 6; i++)
-            if (inside(251 + i * 166, 650, 156, 42)) {
-                const char *st[] = {"template", "module-edit", "dataset-edit",
-                                    "import",   "train",       "upload"};
-                const char *pw[] = {"ps", "memory", "disk", "network", "python", "run"};
-                action(tab == 6 ? st[i] : pw[i]);
+        int status;
+        while (waitpid(p, &status, 0) < 0 && errno == EINTR) {
+        }
+        notify("Stop requested. Boot task disabled.");
+        return;
+    }
+    if (tab == 6) {
+        if (inside(850, 126, 190, 40)) {
+            action("template");
+            return;
+        }
+        if (inside(1055, 126, 192, 40)) {
+            action("module");
+            return;
+        }
+        for (int i = 0; i < 11; i++)
+            if (inside(274 + (i % 2) * 484, 252 + (i / 2) * 62, 455, 32)) {
+                form_focus = i;
+                editing = 0;
                 return;
             }
+        for (int i = 0; i < 6; i++)
+            if (inside(251 + i * 166, 650, 156, 42)) {
+                const char *a[] = {"settings", "module-edit", "dataset-edit",
+                                   "import",   "train",       "upload"};
+                action(a[i]);
+                return;
+            }
+    }
+    if (tab == 8) {
+        if (inside(1010, 126, 237, 40)) {
+            char *a[] = {"python3", "/usr/bin/marrow-ops", "task-next", NULL};
+            spawn_job(a, "Selecting task profile");
+            return;
+        }
+        for (int i = 0; i < 4; i++)
+            if (inside(251 + i * 249, 202, 239, 40)) {
+                power_section = i;
+                form_focus = -1;
+                editing = i == 3;
+                return;
+            }
+        if (power_section == 0) {
+            for (int i = 0; i < 8; i++)
+                if (inside(274 + (i % 2) * 484, 296 + (i / 2) * 75, 455, 32)) {
+                    form_focus = i;
+                    editing = 0;
+                    return;
+                }
+            if (inside(251, 660, 185, 40)) {
+                form_save(1);
+                return;
+            }
+            const char *op = NULL;
+            if (inside(450, 660, 185, 40)) {
+                if (!form_save(1))
+                    return;
+                op = "start";
+            }
+            if (inside(650, 660, 185, 40))
+                op = "stop";
+            if (inside(850, 660, 185, 40))
+                op = "task-log";
+            if (op) {
+                char *a[] = {"python3", "/usr/bin/marrow-ops", (char *)op, NULL};
+                spawn_job(a, "Task control");
+                return;
+            }
+        }
+        if (power_section == 1) {
+            const char *ops[] = {"services", "resources", "storage",  "network",
+                                 "ssh",      "stop-ssh",  "keys",     "backup",
+                                 "logs",     "sysctl",    "firewall", "task-log"};
+            for (int i = 0; i < 12; i++)
+                if (inside(274 + (i % 3) * 320, 280 + (i / 3) * 80, 300, 40)) {
+                    char *a[] = {"python3", "/usr/bin/marrow-ops", (char *)ops[i], NULL};
+                    spawn_job(a, "Running administration tool");
+                    switch_tab(5);
+                    return;
+                }
+        }
+        if (power_section == 2) {
+            for (int i = 0; i < 4; i++)
+                if (inside(274 + i * 239, 330, 222, 40)) {
+                    desktop_choice = i;
+                    return;
+                }
+            if (inside(274, 405, 270, 40) && desktop_choice) {
+                char *a[] = {"python3", "/usr/bin/marrow-ops", "desktop-install",
+                             (char *)desktops[desktop_choice], NULL};
+                spawn_job(a, "Installing desktop; progress is in Terminal");
+                return;
+            }
+            if (inside(560, 405, 270, 40)) {
+                char *a[] = {"python3", "/usr/bin/marrow-ops", "desktop-switch",
+                             (char *)desktops[desktop_choice], NULL};
+                spawn_job(a, "Switching desktop");
+                return;
+            }
+        }
+        if (power_section == 3) {
+            if (inside(251, 660, 185, 40)) {
+                save_editor();
+                return;
+            }
+            if (inside(450, 660, 185, 40)) {
+                action("run");
+                return;
+            }
+            if (inside(274, 275, 940, 350)) {
+                editing = 1;
+                return;
+            }
+        }
     }
     if (tab == 7) {
         if (inside(960, 125, 287, 40))
@@ -1234,6 +1633,8 @@ static void key(int c, int down) {
         switch_tab(c - KEY_F1);
         return;
     }
+    if (form_key(c))
+        return;
     if (editing && !ctrl && c != KEY_ESC) {
         size_t n = strlen(editor);
         if (editor_pos > n)
@@ -1579,12 +1980,17 @@ int main(int argc, char **argv) {
             update_metrics();
             update_network();
             if (child) {
+                job_output();
                 int status;
                 int r = waitpid(child, &status, WNOHANG);
                 if (r == child) {
                     job_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128;
                     child = 0;
+                    if (tab == 8 && power_section == 0)
+                        form_load(1);
                     if (tab == 6) {
+                        form_load(0);
+                        editing = 0;
                         FILE *cfg = fopen("/workspace/project.json", "r");
                         if (cfg) {
                             size_t z = fread(editor, 1, sizeof editor - 1, cfg);
@@ -1593,14 +1999,7 @@ int main(int argc, char **argv) {
                             editor_pos = z;
                         }
                     }
-                    FILE *f = fopen("/workspace/runs/job.log", "r");
-                    if (f) {
-                        char b[32768];
-                        size_t n = fread(b, 1, sizeof b - 1, f);
-                        b[n] = 0;
-                        fclose(f);
-                        append_term(b);
-                    }
+                    job_output();
                     notify(job_status ? "Process exited with an error. Open Terminal for details."
                                       : "Process complete. Results saved to disk.");
                 }
