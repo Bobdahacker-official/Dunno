@@ -1,0 +1,15 @@
+DirectoryIndex index.php
+
+# The .php links work without rewrites. These aliases are optional conveniences.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^robots\.txt$ robots.php [L]
+RewriteRule ^sitemap\.xml$ sitemap.php [L]
+RewriteRule ^manifest\.webmanifest$ manifest.php [L]
+RewriteRule ^library/?$ library.php [L]
+RewriteRule ^articles/([a-z0-9-]+)/?$ article.php?slug=$1 [L,QSA]
+</IfModule>
+
+<FilesMatch "^(config\.php)$">
+Require all denied
+</FilesMatch>
