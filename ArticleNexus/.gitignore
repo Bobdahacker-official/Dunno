@@ -1,0 +1,5 @@
+node_modules/
+dist/
+style-text.mjs
+client-text.mjs
+.env

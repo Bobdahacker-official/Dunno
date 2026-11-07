@@ -1,0 +1,6 @@
+{
+  "name": "articlenexus",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-11-01",
+  "build": { "command": "npm run build" }
+}
